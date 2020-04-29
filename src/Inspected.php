@@ -2,7 +2,7 @@
 
 namespace DeGraciaMathieu\MyersInspector;
 
-use Illuminate\Support\Arr;
+use DeGraciaMathieu\MyersInspector\Utilities\Arr;
 use Symfony\Component\Console\Output\OutputInterface;
 
 class Inspected {

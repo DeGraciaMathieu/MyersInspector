@@ -9,29 +9,51 @@ use PhpParser\Node\Stmt\While_;
 use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\Switch_;
 use PhpParser\Node\Stmt\ElseIf_;
+use PhpParser\Node\Expr\Ternary;
 use PhpParser\Node\Stmt\Foreach_;
+use PhpParser\Node\Stmt\Namespace_;
+use PhpParser\Node\Stmt\Expression;
 use PhpParser\Node\Stmt\ClassMethod;
 
 class Inspector
 {
     public function inspect(array $parsed): Inspected
     {
-        $complexity = [];
+        $inspected = array_map(
+            fn ($unknow) => $this->diveIntoUnknown($unknow)
+        , $parsed);
 
-        foreach ($parsed as $class) {
-            
-            if ($class instanceof Class_)
+        return new Inspected($inspected);
+    }
+
+    public function diveIntoUnknown($unknows)
+    {
+        $unknows = is_array($unknows) ? $unknows : [$unknows] ;
+
+        foreach ($unknows as $unknow) {
+
+            if ($unknow instanceof Namespace_)
             {
-                $methods = $class->getMethods();
+                $insideUnknow = $unknow->stmts;
 
-                $complexity[] = [
-                    'class_name' => $class->name->name,
+                $inspected[] = [
+                    'namespace' => $unknow->name->toString(),
+                    'classes' => $this->diveIntoUnknown($insideUnknow),
+                ];
+            }
+
+            if ($unknow instanceof Class_)
+            {
+                $methods = $unknow->getMethods();
+
+                $inspected[] = [
+                    'class_name' => $unknow->name->name,
                     'methods' => $this->diveIntoMethods($methods),
                 ];
             }
         }
 
-        return new Inspected($complexity);
+        return $inspected;
     }
 
     protected function diveIntoMethods(array $methods): array
@@ -42,14 +64,14 @@ class Inspector
             {
                 $statements = $method->getStmts();
 
-                $complexity[] = [
+                $inspected[] = [
                     'method_name' => $method->name->name,
                     'complexity' => $this->diveIntoStatements($statements),
                 ];
             }
         }
 
-        return $complexity;
+        return $inspected;
     }
 
     protected function diveIntoStatements(array $statements): int
@@ -72,6 +94,13 @@ class Inspector
         foreach ($statements as $statement) {
 
             $depths++;
+
+            if ($statement instanceof Expression) {
+
+                $insideExpression = $statement->expr;
+
+                $complexity += $this->expressionExplorer($insideExpression, $depths);
+            }
 
             if (
                 $statement instanceof If_ 
@@ -102,6 +131,26 @@ class Inspector
                         $complexity += $this->statementExplorer($chainingStatement, $depths - 1);
                     }
                 }
+            }
+        }
+
+        return $complexity;
+    }
+
+    protected function expressionExplorer($expression, int $depths)
+    {
+        $complexity = 0;
+
+        if ($expression instanceof Ternary) {
+
+            $complexity += (1 * $depths) * 2;
+
+            if ($expression->if instanceof Ternary) {
+                $complexity += $this->expressionExplorer($expression->if, $depths + 1);
+            }
+
+            if ($expression->else instanceof Ternary) {
+                $complexity += $this->expressionExplorer($expression->else, $depths + 1);
             }
         }
 
